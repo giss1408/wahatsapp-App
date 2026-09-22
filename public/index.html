@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d1117">
+<meta name="robots" content="noindex, nofollow">
+<title>Matchday</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📋</text></svg>">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ------------------------------------------------------------ gate ---- -->
+<div id="gate" class="gate" hidden>
+  <form class="gate__card" id="gateForm" autocomplete="on">
+    <div class="gate__badge">📋</div>
+    <h1 class="gate__title">Matchday</h1>
+    <p class="gate__sub" id="gateSub">Sign in with your name and the group password.</p>
+    <label class="field">
+      <span class="field__label" id="gateNameLabel">Your name</span>
+      <input class="input" id="gateName" name="name" autocomplete="name" required maxlength="60"
+             enterkeyhint="next" placeholder="e.g. Regis" spellcheck="false">
+    </label>
+    <label class="field">
+      <span class="field__label" id="gatePasswordLabel">Group password</span>
+      <input class="input" id="gatePassword" type="password" name="password" autocomplete="current-password" required
+             enterkeyhint="go" placeholder="••••••••">
+    </label>
+    <p class="gate__error" id="gateError" role="alert" aria-live="polite" hidden></p>
+    <button class="btn btn--primary btn--block" type="submit" id="gateSubmit">Open the list</button>
+    <p class="gate__hint" id="gateHint">Your name signs the items you bring. One password for the whole group.</p>
+  </form>
+</div>
+
+<!-- -------------------------------------------------------------- app ---- -->
+<div id="app" class="app" hidden>
+  <div class="stickyhead">
+    <header class="topbar">
+      <div class="topbar__inner">
+        <div class="topbar__brand">
+          <span class="topbar__mark">📋</span>
+          <div>
+            <h1 class="topbar__title" id="teamName">Matchday</h1>
+            <p class="topbar__meta" id="seasonLabel"></p>
+          </div>
+        </div>
+        <div class="topbar__actions">
+          <button class="who" type="button" id="whoBtn" title="Click to change your name">
+            <span class="who__label" id="whoLabel">Signed in as</span>
+            <span class="who__name" id="whoName">—</span>
+          </button>
+          <button class="btn btn--ghost btn--icon" id="themeBtn" type="button" title="Switch theme" aria-label="Switch theme">◐</button>
+          <button class="btn btn--ghost" id="logoutBtn" type="button">Sign out</button>
+        </div>
+      </div>
+    </header>
+
+    <nav class="tabs" role="tablist" aria-label="Views">
+      <button class="tab is-active" type="button" role="tab" data-view="upcoming" aria-selected="true">Upcoming</button>
+      <button class="tab" type="button" role="tab" data-view="past" aria-selected="false">Past</button>
+      <button class="tab" type="button" role="tab" data-view="settings" aria-selected="false">Settings</button>
+    </nav>
+  </div>
+
+  <main class="main" id="main">
+    <section class="view" id="view-upcoming"></section>
+    <section class="view" id="view-past" hidden></section>
+    <section class="view" id="view-settings" hidden></section>
+  </main>
+
+  <footer class="footer">
+    <span id="syncLabel">—</span>
+    <span class="footer__dot">•</span>
+    <span id="footerShared">Shared list — everyone with the password edits the same data.</span>
+  </footer>
+</div>
+
+<div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
+
+<!-- --------------------------------------------------------- dialogs ---- -->
+<dialog class="modal" id="eventModal">
+  <form class="modal__body" id="eventForm" method="dialog">
+    <h2 class="modal__title" id="eventModalTitle">Add a home game</h2>
+    <div class="grid2">
+      <label class="field">
+        <span class="field__label" id="evDateLabel">Date</span>
+        <input class="input" type="date" id="evDate" required>
+      </label>
+      <label class="field">
+        <span class="field__label" id="evKickoffLabel">Kickoff</span>
+        <input class="input" type="time" id="evKickoff" required step="300">
+      </label>
+    </div>
+    <label class="field">
+      <span class="field__label" id="evOpponentLabel">Opponent</span>
+      <input class="input" id="evOpponent" maxlength="80" placeholder="e.g. FC Riverside">
+    </label>
+    <label class="field">
+      <span class="field__label" id="evVenueLabel">Venue <span class="field__opt" id="evVenueOpt">optional</span></span>
+      <input class="input" id="evVenue" maxlength="80" placeholder="e.g. Main pitch, clubhouse">
+    </label>
+    <fieldset class="fieldset">
+      <legend class="fieldset__legend" id="evDutyLegend">Duty window</legend>
+      <p class="fieldset__hint" id="evDutyHint">The span people can sign up inside — usually setup until after the match.</p>
+      <div class="grid2">
+        <label class="field">
+          <span class="field__label" id="evDutyFromLabel">From</span>
+          <input class="input" type="time" id="evDutyFrom" required step="300">
+        </label>
+        <label class="field">
+          <span class="field__label" id="evDutyToLabel">To</span>
+          <input class="input" type="time" id="evDutyTo" required step="300">
+        </label>
+      </div>
+    </fieldset>
+    <label class="field">
+      <span class="field__label" id="evTeardownLabel">Teardown crew needed</span>
+      <input class="input" type="number" id="evTeardown" min="0" max="50" step="1" value="4">
+    </label>
+    <label class="field">
+      <span class="field__label" id="evNotesLabel">Notes <span class="field__opt" id="evNotesOpt">optional</span></span>
+      <textarea class="input input--area" id="evNotes" rows="2" maxlength="280"
+                placeholder="Gate code, key holder, parking…"></textarea>
+    </label>
+    <label class="check" id="evPresetWrap">
+      <input type="checkbox" id="evPresets" checked>
+      <span id="evPresetsLabel">Start the catering list with the usual items</span>
+    </label>
+    <p class="modal__error" id="eventError" role="alert" hidden></p>
+    <div class="modal__actions">
+      <button class="btn btn--ghost" type="button" data-close>Cancel</button>
+      <button class="btn btn--primary" type="submit" id="eventSubmit">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="modal" id="confirmModal">
+  <div class="modal__body">
+    <h2 class="modal__title" id="confirmTitle">Are you sure?</h2>
+    <p class="modal__text" id="confirmText"></p>
+    <div class="modal__actions">
+      <button class="btn btn--ghost" type="button" data-close>Cancel</button>
+      <button class="btn btn--danger" type="button" id="confirmOk">Delete</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog class="modal" id="nameModal">
+  <form class="modal__body" id="nameForm" method="dialog">
+    <h2 class="modal__title" id="nameTitle">Change your name</h2>
+    <p class="modal__text" id="nameText">Entries you already signed keep the old name unless you re-claim them.</p>
+    <label class="field">
+      <span class="field__label" id="nameLabel">Your name</span>
+      <input class="input" id="nameInput" maxlength="60" required autocomplete="name" spellcheck="false">
+    </label>
+    <p class="modal__error" id="nameError" role="alert" hidden></p>
+    <div class="modal__actions">
+      <button class="btn btn--ghost" type="button" data-close>Cancel</button>
+      <button class="btn btn--primary" type="submit">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="modal" id="shareModal">
+  <div class="modal__body">
+    <h2 class="modal__title" id="shareTitle">Summary for WhatsApp</h2>
+    <p class="modal__text" id="shareText2">Copy this and paste it straight into the group chat.</p>
+    <textarea class="input input--area share__text" id="shareText" rows="14" readonly spellcheck="false"></textarea>
+    <div class="modal__actions">
+      <button class="btn btn--ghost" type="button" id="shareClose" data-close>Close</button>
+      <button class="btn btn--primary" type="button" id="shareCopy">Copy</button>
+    </div>
+  </div>
+</dialog>
+
+<script src="i18n.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

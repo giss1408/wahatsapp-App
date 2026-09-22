@@ -1,0 +1,14 @@
+{
+  "name": "matchday",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lightweight matchday organizer for WhatsApp groups: catering, availability and teardown sign-up behind one password.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
