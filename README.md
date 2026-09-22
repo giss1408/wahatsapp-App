@@ -4,8 +4,8 @@ A small self-hosted page a WhatsApp group can share to organise home games:
 who brings what, when each person is around, and who helps pack down.
 
 Sign in with your name and one shared group password. Available in **English,
-German and French**. No accounts, no database server, no build step, no npm
-dependencies — just Node 20+ and one JSON file.
+German and French**. No accounts, no build step — just Node 20+ and one JSON
+document, kept either in a local file or in Postgres when you deploy it.
 
 ---
 
@@ -27,7 +27,8 @@ which you should always set before sharing the link.
 | `MATCHDAY_PASSWORD` | `matchday` | The single shared password. **Always set this.** |
 | `PORT` | `3000` | Port to listen on. |
 | `HOST` | `0.0.0.0` | Bind address. |
-| `MATCHDAY_DATA_DIR` | `./data` | Where `store.json` and `secret.key` live. |
+| `DATABASE_URL` | unset | Postgres connection string. **Set this on any host with an ephemeral filesystem** (see [Deploying](#deploying)); without it, state is a local file. |
+| `MATCHDAY_DATA_DIR` | `./data` | Where `store.json` and `secret.key` live when `DATABASE_URL` is unset. |
 | `MATCHDAY_SESSION_DAYS` | `30` | How long a sign-in lasts. |
 | `MATCHDAY_TRUST_PROXY` | off | Set to `1` behind a reverse proxy: honours `X-Forwarded-For` and marks the cookie `Secure`. |
 | `MATCHDAY_SECURE_COOKIE` | off | Force the `Secure` cookie flag without trusting proxy headers. |
@@ -94,7 +95,9 @@ accident. Past games move to the **Past** tab by themselves the next day.
   period; correct guesses are rejected too while it lasts.
 - **CSRF** — mutations require an `X-Matchday: 1` header, which cross-site form
   posts cannot set, on top of `SameSite=Strict`.
-- **Storage** — one JSON file written atomically (temp file + `rename`) through a
+- **Storage** — one JSON document behind a small backend interface
+  (`storage.js`): a local file written atomically (temp file + `rename`), or a
+  single Postgres row when `DATABASE_URL` is set. Either way writes go through a
   serialized queue, so a crash mid-write cannot corrupt it and concurrent
   requests cannot interleave. Every mutation bumps a revision counter.
 - **Sync** — open pages poll every 20s (and whenever a tab regains focus) and
@@ -113,21 +116,81 @@ accident. Past games move to the **Past** tab by themselves the next day.
 ## Files
 
 ```
-server.js          HTTP server, routing, validation, storage (no dependencies)
+server.js          HTTP server, routing, validation
+storage.js         state backends: local file, or Postgres via DATABASE_URL
+migrate.js         one-shot copy of local state into Postgres
+render.yaml        Render blueprint (free tier + external Postgres)
 public/index.html  markup and dialogs
 public/styles.css  theming and layout
 public/i18n.js     EN/DE/FR strings and catering presets
 public/app.js      rendering and interactions
-data/store.json    all shared state (created on first use)
-data/secret.key    session signing key (auto-generated, chmod 600)
+data/store.json    all shared state, local mode only (created on first use)
+data/secret.key    session signing key, local mode only (auto-generated, chmod 600)
 ```
+
+`data/` is git-ignored: it holds the signing key, and on a deployed instance the
+real state lives in Postgres.
+
+## Deploying
+
+Free hosting tiers rebuild the container whenever they restart. On Render's free
+plan the service sleeps after 15 minutes of inactivity and wakes with a clean
+filesystem, so anything under `data/` is gone — the fixtures, the roster and the
+signing key with it. Persistent disks are a paid feature, so the state has to
+live outside the container. That is what `DATABASE_URL` is for.
+
+**1. Create a free Postgres database.** [Neon](https://neon.tech) has a free tier
+that does not expire. Create a project and copy the connection string; it looks
+like `postgres://user:pass@ep-xxx.eu-central-1.aws.neon.tech/neondb?sslmode=require`.
+The table is created automatically on first boot — there is no schema step.
+
+**2. Point the app at it.** In the Render dashboard, under **Environment**:
+
+| Variable | Value |
+| --- | --- |
+| `DATABASE_URL` | the Neon connection string |
+| `MATCHDAY_PASSWORD` | your shared group password |
+| `MATCHDAY_SESSION_SECRET` | any long random string (`openssl rand -hex 32`) |
+| `MATCHDAY_TRUST_PROXY` | `1` |
+
+`MATCHDAY_SESSION_SECRET` matters here: pin it and everyone stays signed in
+across deploys, leave it out and each restart invalidates every session.
+`render.yaml` in this repo sets all of this up if you deploy as a Blueprint.
+
+**3. Move your existing data over**, if you already have fixtures locally:
+
+```bash
+DATABASE_URL='postgres://…' npm run migrate
+```
+
+It copies `data/store.json` and the signing key, and refuses to overwrite a
+database that already has state unless you pass `--force`.
+
+On boot the app prints which backend it is using, so you can confirm at a glance:
+
+```
+Storage: postgres → postgres://ep-xxx.eu-central-1.aws.neon.tech/neondb
+State: restored (rev 42, 7 fixture(s))
+```
+
+If `DATABASE_URL` is set but unreachable, the app exits rather than starting with
+an empty roster and overwriting the real one on the first edit.
+
+> Sleeping itself is not fixed by this — a free instance still takes ~30 seconds
+> to answer the first request after it wakes. Only the data loss is fixed.
 
 ## Backups
 
-The only state is `data/store.json` — copy it anywhere.
+The whole state is one JSON document.
 
 ```bash
+# local
 cp data/store.json ~/matchday-backup-$(date +%F).json
+
+# from Postgres
+psql "$DATABASE_URL" -At -c \
+  "SELECT jsonb_pretty(doc) FROM matchday_state WHERE key='store'" \
+  > ~/matchday-backup-$(date +%F).json
 ```
 
 ## Keeping it running

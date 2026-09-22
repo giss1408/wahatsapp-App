@@ -1,0 +1,5 @@
+node_modules/
+
+# Local state. On a real deployment this lives in Postgres (DATABASE_URL);
+# committing it would ship stale fixtures and leak the session signing key.
+data/

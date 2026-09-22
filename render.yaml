@@ -1,0 +1,24 @@
+# Render blueprint. The free web service sleeps after 15 minutes idle and comes
+# back with a rebuilt container, so no state can live on its filesystem — it all
+# goes to Postgres via DATABASE_URL.
+services:
+  - type: web
+    name: matchday
+    runtime: node
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /api/state
+    envVars:
+      # Paste the Neon connection string here, or set it in the dashboard.
+      - key: DATABASE_URL
+        sync: false
+      - key: MATCHDAY_PASSWORD
+        sync: false
+      # Keeps sign-ins alive across deploys; generated once by Render.
+      - key: MATCHDAY_SESSION_SECRET
+        generateValue: true
+      # Render terminates TLS in front of the app: honour X-Forwarded-For for
+      # the login throttle and mark the session cookie Secure.
+      - key: MATCHDAY_TRUST_PROXY
+        value: "1"

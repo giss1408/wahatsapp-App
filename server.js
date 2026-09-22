@@ -2,14 +2,13 @@
 /**
  * Matchday — a lightweight matchday organizer for a WhatsApp group.
  *
- * Zero runtime dependencies. State lives in a single JSON file that is written
- * atomically (temp file + rename) through a serialized queue, so concurrent
- * requests can never interleave a half-written file.
+ * State is a single JSON document behind a storage backend (see storage.js):
+ * a local file by default, or Postgres when DATABASE_URL is set. Writes go
+ * through a serialized queue, so concurrent requests can never interleave.
  */
 'use strict';
 
 const http = require('node:http');
-const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const crypto = require('node:crypto');
@@ -17,11 +16,11 @@ const { randomUUID, timingSafeEqual, createHmac } = crypto;
 
 // ---------------------------------------------------------------- config ----
 
+const { createStorage } = require('./storage');
+
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const DATA_DIR = process.env.MATCHDAY_DATA_DIR || path.join(ROOT, 'data');
-const STORE_FILE = path.join(DATA_DIR, 'store.json');
-const SECRET_FILE = path.join(DATA_DIR, 'secret.key');
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
@@ -30,20 +29,18 @@ const SESSION_DAYS = Number(process.env.MATCHDAY_SESSION_DAYS || 30);
 const SESSION_MS = SESSION_DAYS * 24 * 60 * 60 * 1000;
 const TRUST_PROXY = /^(1|true|yes)$/i.test(process.env.MATCHDAY_TRUST_PROXY || '');
 
-fs.mkdirSync(DATA_DIR, { recursive: true });
+const storage = createStorage({ dataDir: DATA_DIR, databaseUrl: process.env.DATABASE_URL });
 
 /** Persist a random secret so sessions survive restarts unless the operator pins one. */
-function loadSecret() {
+async function loadSecret() {
   if (process.env.MATCHDAY_SESSION_SECRET) return process.env.MATCHDAY_SESSION_SECRET;
-  try {
-    const existing = fs.readFileSync(SECRET_FILE, 'utf8').trim();
-    if (existing) return existing;
-  } catch { /* first run */ }
+  const existing = await storage.readSecret();
+  if (existing) return existing;
   const fresh = crypto.randomBytes(32).toString('hex');
-  fs.writeFileSync(SECRET_FILE, fresh + '\n', { mode: 0o600 });
+  await storage.writeSecret(fresh);
   return fresh;
 }
-const SECRET = loadSecret();
+let SECRET;
 
 // ----------------------------------------------------------------- store ----
 
@@ -56,25 +53,34 @@ const DEFAULT_STORE = () => ({
   events: [],
 });
 
-let store;
-try {
-  store = JSON.parse(fs.readFileSync(STORE_FILE, 'utf8'));
-  if (!store || typeof store !== 'object' || !Array.isArray(store.events)) throw new Error('malformed store');
-  store = { ...DEFAULT_STORE(), ...store };
-} catch {
-  store = DEFAULT_STORE();
+let store = DEFAULT_STORE();
+
+async function loadStore() {
+  let loaded = null;
+  try {
+    loaded = await storage.readDoc();
+  } catch (err) {
+    // Refuse to start on a backend we cannot read: carrying on would serve an
+    // empty roster and then overwrite the real one on the first edit.
+    throw new Error(`could not read state from ${storage.describe()}: ${err.message}`);
+  }
+  if (loaded && typeof loaded === 'object' && Array.isArray(loaded.events)) {
+    store = { ...DEFAULT_STORE(), ...loaded };
+    return true;
+  }
+  if (loaded) console.warn('[matchday] stored state was malformed — starting from defaults');
+  return false;
 }
 
 // Writes are chained onto a single promise so they apply one at a time.
 let writeChain = Promise.resolve();
 function persist() {
-  writeChain = writeChain.then(async () => {
-    const tmp = `${STORE_FILE}.${process.pid}.tmp`;
-    await fsp.writeFile(tmp, JSON.stringify(store, null, 2));
-    await fsp.rename(tmp, STORE_FILE);
-  }).catch((err) => {
-    console.error('[matchday] failed to persist store:', err.message);
-  });
+  const snapshotToWrite = store;
+  writeChain = writeChain
+    .then(() => storage.writeDoc(snapshotToWrite))
+    .catch((err) => {
+      console.error('[matchday] failed to persist store:', err.message);
+    });
   return writeChain;
 }
 
@@ -588,20 +594,49 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, HOST, () => {
+async function main() {
+  await storage.init();
+  SECRET = await loadSecret();
+  const restored = await loadStore();
+
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(PORT, HOST, resolve);
+  });
+
   const usingDefault = PASSWORD === 'matchday' && !process.env.MATCHDAY_PASSWORD;
   console.log(`\n  Matchday is running → http://localhost:${PORT}`);
-  console.log(`  Data file: ${STORE_FILE}`);
+  console.log(`  Storage: ${storage.kind} → ${storage.describe()}`);
+  console.log(`  State: ${restored ? `restored (rev ${store.rev}, ${store.events.length} fixture(s))` : 'fresh start'}`);
+  if (storage.ephemeralWarning) console.log(`\n  ⚠  ${storage.ephemeralWarning}`);
   if (usingDefault) {
     console.log('\n  ⚠  Using the default password "matchday".');
     console.log('     Set MATCHDAY_PASSWORD before sharing the link.\n');
   } else {
     console.log('  Password: set via MATCHDAY_PASSWORD\n');
   }
-});
+}
 
+let shuttingDown = false;
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => {
-    server.close(() => writeChain.then(() => process.exit(0)));
+    if (shuttingDown) return;
+    shuttingDown = true;
+    // Render sends SIGTERM before it spins the instance down; flush the last
+    // write and close the pool before the process goes away.
+    server.close(async () => {
+      try {
+        await writeChain;
+        await storage.close();
+      } catch (err) {
+        console.error('[matchday] shutdown:', err.message);
+      }
+      process.exit(0);
+    });
   });
 }
+
+main().catch((err) => {
+  console.error(`[matchday] startup failed: ${err.message}`);
+  process.exit(1);
+});
