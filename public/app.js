@@ -426,7 +426,9 @@
   function cateringBlock(ev, ro) {
     const claimed = ev.items.filter((i) => i.claimedBy).length;
     const used = new Set(ev.items.map((i) => i.name.toLowerCase()));
-    const presets = (state.cateringPresets || []).filter((p) => !used.has(p.toLowerCase()));
+    const presets = (state.cateringPresets || [])
+      .map((value) => ({ value, label: window.I18N.presetLabel(value) }))
+      .filter(({ value, label }) => !used.has(value.toLowerCase()) && !used.has(label.toLowerCase()));
 
     const rows = ev.items.length
       ? `<div class="rows">${ev.items.map((item) => {
@@ -468,7 +470,7 @@
           <button class="btn btn--sm" type="button" data-act="item-add">${t('cat.add')}</button>
           <button class="btn btn--sm btn--primary" type="button" data-act="item-add-mine">${t('cat.addMine')}</button>
         </div>
-        ${presets.length ? `<div class="presets">${presets.map((p) => `<button class="preset" type="button" data-act="preset" data-name="${esc(p)}">+ ${esc(p)}</button>`).join('')}</div>` : ''}`}
+        ${presets.length ? `<div class="presets">${presets.map(({ label }) => `<button class="preset" type="button" data-act="preset" data-name="${esc(label)}">+ ${esc(label)}</button>`).join('')}</div>` : ''}`}
     </div>`;
   }
 

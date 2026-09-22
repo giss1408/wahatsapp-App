@@ -49,7 +49,7 @@ const SECRET = loadSecret();
 
 const DEFAULT_STORE = () => ({
   rev: 1,
-  teamName: 'Our Team',
+  teamName: 'Team Telekom Baskets Bonn',
   season: '',
   cateringPresets: ['Coffee', 'Milk', 'Sugar', 'Tea', 'Fruit', 'Cake', 'Water', 'Soft drinks', 'Cups', 'Napkins'],
   members: [],

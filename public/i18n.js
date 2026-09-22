@@ -14,7 +14,7 @@
       // gate
       'gate.sub': 'Sign in with your name and the group password.',
       'gate.name': 'Your name',
-      'gate.namePlaceholder': 'e.g. Regis',
+      'gate.namePlaceholder': 'Your name',
       'gate.password': 'Group password',
       'gate.submit': 'Open the list',
       'gate.checking': 'Checking…',
@@ -236,7 +236,7 @@
 
       'gate.sub': 'Melde dich mit deinem Namen und dem Gruppenpasswort an.',
       'gate.name': 'Dein Name',
-      'gate.namePlaceholder': 'z. B. Regis',
+      'gate.namePlaceholder': 'Dein Name',
       'gate.password': 'Gruppenpasswort',
       'gate.submit': 'Liste öffnen',
       'gate.checking': 'Prüfe…',
@@ -446,7 +446,7 @@
 
       'gate.sub': 'Connecte-toi avec ton nom et le mot de passe du groupe.',
       'gate.name': 'Ton nom',
-      'gate.namePlaceholder': 'p. ex. Regis',
+      'gate.namePlaceholder': 'Votre nom',
       'gate.password': 'Mot de passe du groupe',
       'gate.submit': 'Ouvrir la liste',
       'gate.checking': 'Vérification…',
@@ -687,6 +687,14 @@
     langs: LANGS,
     name: (code) => DICT[code]['lang.name'],
     presets: () => PRESETS[lang] || PRESETS.en,
+    presetLabel: (name) => {
+      const source = String(name).toLowerCase();
+      for (const code of LANGS) {
+        const index = PRESETS[code].findIndex((preset) => preset.toLowerCase() === source);
+        if (index >= 0) return (PRESETS[lang] || PRESETS.en)[index];
+      }
+      return name;
+    },
     t,
   };
 })();
